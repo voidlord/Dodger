@@ -1,57 +1,61 @@
 #include "Game.h"
 
 Game::Game() {
-    
+    this->init();
 }
 
 Game::~Game() {
-    
+    this->clean();
 }
 
-//initialize game
 void Game::init() {
     std::srand((unsigned)time(0));
+
+    try {
+        logger = spdlog::basic_logger_mt("logger", "logs/log.txt");
+    }
+    catch (const spdlog::spdlog_ex& ex) {
+
+    }
+
+    logger->set_level(spdlog::level::info);
+    logger->flush_on(spdlog::level::info);
     
-    //window size
     width = 600;
     height = 800;
     
-    LOG(INFO) << "Initializing Game object.";
+    logger->info("Initializing Game object.");
     
     if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-        //initialize window
-        window = SDL_CreateWindow("Dodger", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN);
+        window = SDL_CreateWindow("Dodger", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
         if (window != 0) {
-            //initialize renderer with hardware acceleration and vsync on
             renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
             if (renderer != 0) {
                 SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                //initialize text rendering in SDL
                 if (TTF_Init() != -1) {
-                    LOG(INFO) << "Initializing completed.";
+                    logger->info("Successfully initialized Game object");
                     running = true;
                 } else {
-                    LOG(FATAL) << "Failed to init TTF";
+                    logger->error("Failed to init TTF");
                     logSDLError("TTF_Init");
                     running = false;
                 }
             } else {
-                LOG(FATAL) << "Failed to create renderer.";
+                logger->error("Failed to create renderer.");
                 logSDLError("SDL_CreateRenderer");
                 running = false;
             }
         } else {
-            LOG(FATAL) << "Failed to create window.";
+            logger->error("Failed to create window.");
             logSDLError("SDL_CreateWindow");
             running = false;
         }
     } else {
-        LOG(FATAL) << "Failed to init SDL.";
+        logger->error("Failed to init SDL.");
         logSDLError("SDL_Init");
         running = false;
     }    
     
-    //initialize all members
     camera.x = 0;
     camera.y = 0;
     camera.w = width;
@@ -59,7 +63,7 @@ void Game::init() {
     ticks = 0;
     rate = 0;
     speed = 0.0f;
-    boost = false;
+    speedUp = false;
     immune = 0;
     scoreMultiply = false;
     scoreMultiplyStart = 0;
@@ -71,42 +75,38 @@ void Game::init() {
     player = new Object(0, 0, playerSize, playerSize);
     score = 0;
     this->highscore = 516;
-    gState = gameRunning;
+    gState = gameState::gameRunning;
     SDL_ShowCursor(false);
 }
 
-//update game based on events
 void Game::event() {
     while(SDL_PollEvent(&events)) {
-        //stop gameloop if window is closed
         if (events.type == SDL_QUIT) {
             running = false;
         }
         if (events.type == SDL_KEYDOWN) {
             //if ESC is pressed pause the game
             if (events.key.keysym.sym == SDLK_ESCAPE) {
-                if ((gState == gamePaused) && (spawnObjects == true)) {
+                if ((gState == gameState::gamePaused) && (spawnObjects == true)) {
                     SDL_ShowCursor(false);
                     SDL_WarpMouseInWindow(window, player->getPosX() + player->getWidth()/2, player->getPosY() + player->getHeight()/2);
                     skipCollisionTicks = 1;
-                    gState = gameRunning;
-                } else if ((gState == gameRunning) && (spawnObjects == true)) { //otherwise unpause it
+                    gState = gameState::gameRunning;
+                } else if ((gState == gameState::gameRunning) && (spawnObjects == true)) { //otherwise unpause it
                     SDL_ShowCursor(true);
-                    gState = gamePaused;
+                    gState = gameState::gamePaused;
                 }
             }
-            //increase game speed while space is being pressed
             if (events.key.keysym.sym == SDLK_SPACE) {
-                boost = true;
+                speedUp = true;
             }
         }
         if (events.type == SDL_KEYUP) {
             if (events.key.keysym.sym == SDLK_SPACE) {
-                boost = false;
+                speedUp = false;
             }
         }
-        if (gState == inMenu) {
-            //in restart screen if mouse is clicked, restart game
+        if (gState == gameState::inMenu) {
             if ((events.type == SDL_MOUSEBUTTONDOWN) && (events.button.button == SDL_BUTTON_LEFT)) {
                 restartFlag = true;
             }
@@ -114,20 +114,18 @@ void Game::event() {
     }
 }
 
-//update the game
 void Game::update() {
     if (restartFlag) {
         this->restart();
     }
     
-    //get current mouse position within the window
     SDL_GetMouseState(&mouseX, &mouseY);
     
-    if (gState == gameRunning) {
+    if (gState == gameState::gameRunning) {
         //position the player on the mouse position
         player->setPos(mouseX - player->getWidth()/2, mouseY - player->getHeight()/2);
         
-        //fix player position so it wont go outside the window
+        //fix player position inside visible area
         if (player->getPosX() < 0) {
             player->setPos(0, player->getPosY());
         }
@@ -146,39 +144,39 @@ void Game::update() {
             spawnObjects = true;
         }
         
-        //change speed based on points (also good against exploits)
+        //change speed based on points
         if (score < 50) {
             speed = 1.5f;
         } else if (score < 100) {
-            speed = 2.0f;           //+0.5
+            speed = 2.0f;          
         } else if (score < 200) {
-            speed = 2.5f;           //+0.5
+            speed = 2.5f;          
         } else if (score < 300) {
-            speed = 3.5f;           //+1.0
+            speed = 3.5f;          
         } else if (score < 500) {
-            speed = 4.5f;           //+1.0
+            speed = 4.5f;           
         } else if (score < 750) {
-            speed = 5.5f;           //+1.0
+            speed = 5.5f;          
         } else if (score < 1000) {
-            speed = 6.5f;           //+1.0
+            speed = 6.5f;          
         } else if (score < 1500) {
-            speed = 8.5f;           //+1.5
+            speed = 8.5f;          
         } else if (score < 2000) {
-            speed = 10.0f;          //+1.5
+            speed = 10.0f;         
         } else if (score < 5000) {
-            speed = 11.5f;          //+1.5
+            speed = 11.5f;          
         } else if (score < 10000) {
-            speed = 13.0f;          //+1.5
+            speed = 13.0f;         
         } else if (score < 25000) {
-            speed = 15.0f;          //+2.0
+            speed = 15.0f;          
         } else if (score < 50000) {
-            speed = 17.0f;          //+2.0
+            speed = 17.0f;        
         } else if (score < 100000) {
-            speed = 20.0f;          //+3.0
+            speed = 20.0f;  
         }
         
         //increase speed while boost is true
-        if (boost == true) {
+        if (speedUp == true) {
             speed += 2.0f;
         }
         
@@ -228,7 +226,7 @@ void Game::update() {
                         objectsVec.erase(it2);
                         break;
                     } else {
-                        gState = inMenu;
+                        gState = gameState::inMenu;
                         spawnObjects = false;
                         SDL_ShowCursor(true);
                     }
@@ -264,20 +262,16 @@ void Game::update() {
     }
 }
 
-//render current frame
 void Game::render() {
-    //position the camera correctly
     setCamera();
     
     //clean current frame
     SDL_SetRenderDrawColor(renderer, 149, 148, 139, 255);
     SDL_RenderClear(renderer);
     
-    //draw powerups and green squares(objects)
     drawPowerUps();
-    drawObjects();
+    drawAllObjects();
     
-    //draw player based on immunity level
     if (immune > 0) {
         if (immune == 1) {
             draw(player, {176, 196, 222});
@@ -290,13 +284,12 @@ void Game::render() {
         draw(player, {255, 255, 255});
     }
     
-    if (gState != inMenu) {
+    if (gState != gameState::inMenu) {
         if (!spawnObjects) {
-            drawStart();
+            drawMainScreen();
         } else {
             drawText("Score: " + std::to_string(score), 0, 0, 36, {255, 255, 255});
         }
-        //draw immune icon
         if (immune > 0) {
             SDL_Rect rect;
             
@@ -311,7 +304,6 @@ void Game::render() {
             
             drawText(std::to_string(immune), width - 54, 12, 20, {255, 255, 255});
         }
-        //draw score multiply icon
         if (scoreMultiply) {
             SDL_Rect rect;
             
@@ -326,7 +318,7 @@ void Game::render() {
         }
     }
     
-    if (gState == inMenu) {
+    if (gState == gameState::inMenu) {
         if (score > highscore) {
             drawText("New Highscore!", width*0.33, height*0.4, 48, {255, 255, 255});
         } else if (score <= highscore) {
@@ -337,19 +329,17 @@ void Game::render() {
         drawText("Click to play again", width*0.22, height*0.75, 58, {255, 255, 255});
     }
     
-    if (gState == gamePaused) {
+    if (gState == gameState::gamePaused) {
         drawText("Paused", width*0.41, height*0.75, 58, {255, 255, 255});
     }
 
     SDL_RenderPresent(renderer);
 }
 
-//return score
 int Game::getScore() {
     return score;
 }
 
-//spawn green squares
 void Game::spawnEnemies() {
     int size = 50;
     static unsigned int localTick = 1;
@@ -371,7 +361,6 @@ void Game::spawnEnemies() {
     localTick++;
 }
 
-//spawn powerups
 void Game::spawnPowerUps() {
     int size = 35;
     static unsigned int localTick = 1;
@@ -383,7 +372,6 @@ void Game::spawnPowerUps() {
         bool isCollided = false;
         std::vector<Object>::iterator it;
         
-        //spawn them so they wont be covered by a green square
         while (true) {
             isCollided = false;
             for (it = objectsVec.begin(); it != objectsVec.end(); it++) {
@@ -406,17 +394,14 @@ void Game::spawnPowerUps() {
     localTick++;
 }
 
-//clear objects vector
 void Game::clearEnemies() {
     objectsVec.clear();
 }
 
-//clear powerups vector
 void Game::clearPowerUps() {
     powerUpsVec.clear();
 }
 
-//draw object as a rectangle with a given color
 void Game::draw(Object* e, SDL_Color color) {
     SDL_Rect rect;
     
@@ -433,8 +418,7 @@ void Game::draw(Object* e, SDL_Color color) {
     SDL_RenderDrawRect(renderer, &rect);
 }
 
-//draw the start screen with instructions
-void Game::drawStart() {
+void Game::drawMainScreen() {
     SDL_Rect rect;
     
     rect.x = 0;
@@ -444,8 +428,8 @@ void Game::drawStart() {
     
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
     SDL_RenderDrawRect(renderer, &rect);
+
     drawText("Move here to start!", width*0.18, height*0.8, 64, {255, 255, 255});
-    
     drawText("Avoid green squares", width*0.30, height*0.1, 40, {255, 255, 255});
     drawText("Blue squares give one-use immunity", width*0.15, height*0.2, 40, {255, 255, 255});
     drawText("Yellow squares give 2x score for 15s", width*0.13, height*0.3, 40, {255, 255, 255});
@@ -453,15 +437,13 @@ void Game::drawStart() {
     drawText("Hold space to gain speed boost", width*0.20, height*0.6, 40, {255, 255, 255});
 }
 
-//draw all objects in objects vector
-void Game::drawObjects() {
+void Game::drawAllObjects() {
     std::vector<Object>::iterator it;
     for (it = objectsVec.begin(); it != objectsVec.end(); it++) {
         draw(&(*it), {65, 146, 75});
     }
 }
 
-//draw all powerups in powerups vector
 void Game::drawPowerUps() {
     std::vector<PowerUp>::iterator it;
     for (it = powerUpsVec.begin(); it != powerUpsVec.end(); it++) {
@@ -473,12 +455,11 @@ void Game::drawPowerUps() {
     }
 }
 
-//draw text using TTF rendering
 void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
     TTF_Font* font = TTF_OpenFont("assets/font.ttf", size);
     
     if (font == NULL) {
-        LOG(ERROR) << "Failed to load font.";
+        logger->error("Failed to load font.");
         logSDLError("Failed to load font.");
     }
     
@@ -494,8 +475,6 @@ void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
     TTF_CloseFont(font);
 }
 
-//this function helps with drawing a texture, if i were to copy the code in the draw object function,
-//it would make all textures black if i were to destroy the texture after finishing the drawing of the object
 void Game::drawTexture(SDL_Texture* tex, int x, int y) {
     SDL_Rect tRect;
     tRect.x = x;
@@ -505,13 +484,11 @@ void Game::drawTexture(SDL_Texture* tex, int x, int y) {
     SDL_RenderCopy(renderer, tex, NULL, &tRect);
 }
 
-//set camera position
 void Game::setCamera() {
     camera.x = 0;
     camera.y = 0;
 }
 
-//check collision between two objects
 bool Game::checkCollision(Object* A, Object* B) {
     if((A->getPosX() < (B->getPosX() + B->getWidth())) && ((A->getPosX() + A->getWidth()) > B->getPosX()) 
     && (A->getPosY() < (B->getPosY() + B->getHeight())) && ((A->getPosY() + A->getHeight()) > B->getPosY())) {
@@ -521,34 +498,28 @@ bool Game::checkCollision(Object* A, Object* B) {
     }
 }
 
-//return running value
 bool Game::isRunning() {
     return running;
 }
 
-//returt game state
 gameState Game::getState() {
     return gState;
 }
 
-//change game state
 void Game::setState(gameState state) {
     gState = state;
 }
 
-//pase game
 void Game::pause() {
-    this->setState(gamePaused);
+    this->setState(gameState::gamePaused);
 }
 
-//unpause game
 void Game::unPause() {
-    this->setState(gameRunning);
+    this->setState(gameState::gameRunning);
 }
 
-//restart game
 void Game::restart() {
-    LOG(INFO) << "Preparing to restart game.";
+    logger->info("Preparing to restart game.");
     restartFlag = false;
     if (score > highscore) {
         highscore = score;
@@ -565,23 +536,21 @@ void Game::restart() {
     this->clearPowerUps();
     
     SDL_ShowCursor(false);
-    gState = gameRunning;
-    LOG(INFO) << "Restart successful";
+    gState = gameState::gameRunning;
+    logger->info("Restart successful");
 }
 
-//clean up the game
 void Game::clean() {
-    LOG(INFO) << "Cleaning up Game object";
+    logger->info("Cleaning up Game object");
     delete player;
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_DestroyTexture(textTexture);
     TTF_Quit();
     SDL_Quit();
-    LOG(INFO) << "Cleaning finished.";
+    logger->info("Cleaning finished.");
 }
 
-//show SDL error when something goes wrong with an SDL function
 void Game::logSDLError(const char* msg) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SDLError", msg, window);
 }

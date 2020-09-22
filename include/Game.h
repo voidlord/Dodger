@@ -8,7 +8,8 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
-#include <easylogging++.h>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include "Object.h"
 #include "PowerUp.h"
@@ -17,7 +18,7 @@ const int TICKS_PER_SECOND = 60;
 const int SKIP_TICKS = 1000/TICKS_PER_SECOND;
 const int MAX_FRAMESKIP = 10;
 
-enum gameState {
+enum class gameState {
     inMenu,
     gameRunning,
     gamePaused
@@ -42,8 +43,8 @@ public:
     void clearPowerUps();
     
     void draw(Object* t, SDL_Color color);
-    void drawStart();
-    void drawObjects();
+    void drawMainScreen();
+    void drawAllObjects();
     void drawPowerUps();
     void drawText(std::string text, int x, int y, int size, SDL_Color color);
     void drawTexture(SDL_Texture* tex, int x, int y);
@@ -81,13 +82,15 @@ private:
     int width, height;
     int rate;
     float speed;
-    bool boost;
+    bool speedUp;
     
     unsigned int immune;
     bool scoreMultiply;
     unsigned int scoreMultiplyStart;
     
     SDL_Texture* textTexture;
+
+    std::shared_ptr<spdlog::logger> logger;
     
     std::vector<Object> objectsVec;
     std::vector<PowerUp> powerUpsVec;

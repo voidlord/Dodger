@@ -92,7 +92,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\dev\SDL2_ttf-2.0.15\include;D:\dev\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\dev\spdlog-1.8.0\include;D:\dev\SDL2_ttf-2.0.15\include;D:\dev\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -110,7 +110,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\dev\SDL2_ttf-2.0.15\include;D:\dev\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\dev\spdlog-1.8.0\include;D:\dev\SDL2_ttf-2.0.15\include;D:\dev\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -153,14 +153,12 @@
     <Font Include="assets\font.ttf" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\easylogging++.cc" />
     <ClCompile Include="src\Game.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Object.cpp" />
     <ClCompile Include="src\PowerUp.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\easylogging++.h" />
     <ClInclude Include="include\Game.h" />
     <ClInclude Include="include\Object.h" />
     <ClInclude Include="include\PowerUp.h" />
