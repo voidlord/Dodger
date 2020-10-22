@@ -1,13 +1,23 @@
 #ifndef GAME_H
 #define GAME_H
 
+#define GLEW_STATIC
+
+#include <GL/glew.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include <SDL.h>
+#include <SDL_opengl.h>
+
+#include "Shader.h"
+
 #include <vector>
 #include <string>
 #include <cstdlib>
 #include <ctime>
 
-#include <SDL.h>
-#include <SDL_ttf.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
@@ -46,8 +56,7 @@ public:
     void drawMainScreen();
     void drawAllObjects();
     void drawPowerUps();
-    void drawText(std::string text, int x, int y, int size, SDL_Color color);
-    void drawTexture(SDL_Texture* tex, int x, int y);
+    //void drawText(std::string text, int x, int y, int size, SDL_Color color);
     
     void setCamera();
     bool checkCollision(Object* A, Object* B);
@@ -62,10 +71,14 @@ public:
     void logSDLError(const char* msg);
     
 private:
-    SDL_Renderer* renderer;
-    SDL_Window* window;
-    SDL_Rect camera;
+    SDL_Window* sdl_window;
+    SDL_GLContext opengl_context;
+
+    Shader* shader;
+    GLuint VAO;
+
     SDL_Event events;
+    SDL_Rect camera;
     
     bool running;
     bool spawnObjects;
@@ -88,7 +101,7 @@ private:
     bool scoreMultiply;
     unsigned int scoreMultiplyStart;
     
-    SDL_Texture* textTexture;
+    //SDL_Texture* textTexture;
 
     std::shared_ptr<spdlog::logger> logger;
     
