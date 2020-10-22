@@ -11,12 +11,7 @@ Game::~Game() {
 void Game::init() {
     std::srand((unsigned)time(0));
 
-    try {
-        logger = spdlog::basic_logger_mt("logger", "logs/log.txt");
-    }
-    catch (const spdlog::spdlog_ex& ex) {
-
-    }
+    logger = spdlog::basic_logger_mt("logger", "logs/log.txt");
 
     logger->set_level(spdlog::level::info);
     logger->flush_on(spdlog::level::info);
@@ -27,24 +22,70 @@ void Game::init() {
     logger->info("Initializing Game object.");
     
     if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-        window = SDL_CreateWindow("Dodger", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
-        if (window != 0) {
-            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-            if (renderer != 0) {
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                if (TTF_Init() != -1) {
-                    logger->info("Successfully initialized Game object");
-                    running = true;
-                } else {
-                    logger->error("Failed to init TTF");
-                    logSDLError("TTF_Init");
-                    running = false;
-                }
-            } else {
-                logger->error("Failed to create renderer.");
-                logSDLError("SDL_CreateRenderer");
-                running = false;
-            }
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+
+        sdl_window = SDL_CreateWindow("Dodger", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+        if (sdl_window != 0) {
+            opengl_context = SDL_GL_CreateContext(sdl_window);
+            
+            glewExperimental = GL_TRUE;
+            glewInit();
+
+            shader = new Shader("assets/shader.vs", "assets/shader.fs");
+            glBindFragDataLocation(shader->ID, 0, "outColor");
+            shader->link();
+
+            SDL_GL_SetSwapInterval(1);
+
+            glViewport(0, 0, width, height);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+
+            glm::mat4 projection = glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
+            this->shader->use();
+            this->shader->setMat4("projection", projection);
+
+            GLuint VBO;
+
+            GLfloat vertices[] = {
+                // pos
+                 0.0f,  0.0f,
+                 0.0f,  1.0f,
+                 1.0f,  1.0f,
+                 1.0f,  0.0f
+            };
+
+            GLuint elements[] = {
+                0, 1, 3,
+                1, 2, 3
+            };
+
+            glGenVertexArrays(1, &this->VAO);
+            glGenBuffers(1, &VBO);
+
+            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+            glBindVertexArray(this->VAO);
+
+            GLuint ebo;
+            glGenBuffers(1, &ebo);
+
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
+
+            GLint posAttrib = glGetAttribLocation(shader->ID, "inPosition");
+            glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), (void*)0);
+            glEnableVertexAttribArray(posAttrib);
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+
+            running = true;
         } else {
             logger->error("Failed to create window.");
             logSDLError("SDL_CreateWindow");
@@ -54,7 +95,7 @@ void Game::init() {
         logger->error("Failed to init SDL.");
         logSDLError("SDL_Init");
         running = false;
-    }    
+    }
     
     camera.x = 0;
     camera.y = 0;
@@ -89,7 +130,7 @@ void Game::event() {
             if (events.key.keysym.sym == SDLK_ESCAPE) {
                 if ((gState == gameState::gamePaused) && (spawnObjects == true)) {
                     SDL_ShowCursor(false);
-                    SDL_WarpMouseInWindow(window, player->getPosX() + player->getWidth()/2, player->getPosY() + player->getHeight()/2);
+                    SDL_WarpMouseInWindow(sdl_window, (int)(player->getPosX() + player->getWidth()/2), (int)(player->getPosY() + player->getHeight()/2));
                     skipCollisionTicks = 1;
                     gState = gameState::gameRunning;
                 } else if ((gState == gameState::gameRunning) && (spawnObjects == true)) { //otherwise unpause it
@@ -122,21 +163,21 @@ void Game::update() {
     SDL_GetMouseState(&mouseX, &mouseY);
     
     if (gState == gameState::gameRunning) {
-        //position the player on the mouse position
-        player->setPos(mouseX - player->getWidth()/2, mouseY - player->getHeight()/2);
+        //position the player on the cursor
+        player->setPos((float)(mouseX - player->getWidth()/2), (float)(mouseY - player->getHeight()/2));
         
         //fix player position inside visible area
         if (player->getPosX() < 0) {
-            player->setPos(0, player->getPosY());
+            player->setPos(0, (float)(player->getPosY()));
         }
         if (player->getPosY() < 0) {
-            player->setPos(player->getPosX(), 0);
+            player->setPos((float)(player->getPosX()), 0);
         }
         if (player->getPosX() > width - player->getWidth()) {
-            player->setPos(width - player->getWidth(), player->getPosY());
+            player->setPos((float)(width - player->getWidth()), (float)(player->getPosY()));
         }
         if (player->getPosY() > height - player->getHeight()) {
-            player->setPos(player->getPosX(), height - player->getHeight());
+            player->setPos((float)(player->getPosX()), (float)(height - player->getHeight()));
         }
         
         //if moved on the start square position, then start the game
@@ -181,7 +222,7 @@ void Game::update() {
         }
         
         //change spawnrate based on speed
-        rate = speed * 2.0;
+        rate = (int)(speed * 2.0);
         
         //spawn objects while the flag is true
         if (spawnObjects) {
@@ -264,10 +305,9 @@ void Game::update() {
 
 void Game::render() {
     setCamera();
-    
-    //clean current frame
-    SDL_SetRenderDrawColor(renderer, 149, 148, 139, 255);
-    SDL_RenderClear(renderer);
+
+    glClearColor((float) 149/255, (float) 148/255, (float) 139/255, (float) 255/255);
+    glClear(GL_COLOR_BUFFER_BIT);
     
     drawPowerUps();
     drawAllObjects();
@@ -288,7 +328,7 @@ void Game::render() {
         if (!spawnObjects) {
             drawMainScreen();
         } else {
-            drawText("Score: " + std::to_string(score), 0, 0, 36, {255, 255, 255});
+            //drawText("Score: " + std::to_string(score), 0, 0, 36, {255, 255, 255});
         }
         if (immune > 0) {
             SDL_Rect rect;
@@ -298,11 +338,11 @@ void Game::render() {
             rect.w = 20;
             rect.h = 20;
             
-            SDL_SetRenderDrawColor(renderer, 70, 130, 180, 255);
+            //SDL_SetRenderDrawColor(renderer, 70, 130, 180, 255);
             
-            SDL_RenderFillRect(renderer, &rect);
+            //SDL_RenderFillRect(renderer, &rect);
             
-            drawText(std::to_string(immune), width - 54, 12, 20, {255, 255, 255});
+            //drawText(std::to_string(immune), width - 54, 12, 20, {255, 255, 255});
         }
         if (scoreMultiply) {
             SDL_Rect rect;
@@ -312,28 +352,29 @@ void Game::render() {
             rect.w = 20;
             rect.h = 20;
             
-            SDL_SetRenderDrawColor(renderer, 255, 255, 51, 255);
+            //SDL_SetRenderDrawColor(renderer, 255, 255, 51, 255);
             
-            SDL_RenderFillRect(renderer, &rect);
+            //SDL_RenderFillRect(renderer, &rect);
         }
     }
     
     if (gState == gameState::inMenu) {
         if (score > highscore) {
-            drawText("New Highscore!", width*0.33, height*0.4, 48, {255, 255, 255});
+            //drawText("New Highscore!", width*0.33, height*0.4, 48, {255, 255, 255});
         } else if (score <= highscore) {
-            drawText("Highscore: " + std::to_string(highscore), width*0.34, height*0.4, 40, {255, 255, 255});
+            //drawText("Highscore: " + std::to_string(highscore), width*0.34, height*0.4, 40, {255, 255, 255});
         }
         
-        drawText("Score: " + std::to_string(score), width*0.36, height*0.5, 64, {255, 255, 255});
-        drawText("Click to play again", width*0.22, height*0.75, 58, {255, 255, 255});
+        //drawText("Score: " + std::to_string(score), width*0.36, height*0.5, 64, {255, 255, 255});
+        //drawText("Click to play again", width*0.22, height*0.75, 58, {255, 255, 255});
     }
     
     if (gState == gameState::gamePaused) {
-        drawText("Paused", width*0.41, height*0.75, 58, {255, 255, 255});
+        //drawText("Paused", width*0.41, height*0.75, 58, {255, 255, 255});
     }
+    
 
-    SDL_RenderPresent(renderer);
+    SDL_GL_SwapWindow(sdl_window);
 }
 
 int Game::getScore() {
@@ -346,7 +387,7 @@ void Game::spawnEnemies() {
     static int randomNum = 10;
     
     if (localTick % randomNum == 0) {
-        Object tmpObject(std::rand() % (width - size), -size, size, size);
+        Object tmpObject((float)(std::rand() % (width - size)), (float)-size, size, size);
         objectsVec.push_back(tmpObject);
         localTick = 1;
         //randomNum is the Y position of the next object
@@ -367,7 +408,7 @@ void Game::spawnPowerUps() {
     static int randomNum = 1000;
     
     if (localTick % randomNum == 0) {
-        PowerUp tmpPowerUp = PowerUp((std::rand() % 2) + 1, std::rand() % (width - size), -size, size, size);
+        PowerUp tmpPowerUp = PowerUp((std::rand() % 2) + 1, (float)(std::rand() % (width - size)), (float)-size, size, size);
         
         bool isCollided = false;
         std::vector<Object>::iterator it;
@@ -382,7 +423,7 @@ void Game::spawnPowerUps() {
             if (isCollided == false) {
                 break;
             } else {
-                tmpPowerUp.setPos(std::rand() % (width - size), tmpPowerUp.getPosY());
+                tmpPowerUp.setPos((float)(std::rand() % (width - size)), tmpPowerUp.getPosY());
             }
         }
         powerUpsVec.push_back(tmpPowerUp);
@@ -403,19 +444,36 @@ void Game::clearPowerUps() {
 }
 
 void Game::draw(Object* e, SDL_Color color) {
-    SDL_Rect rect;
-    
-    rect.x = e->getPosX();
-    rect.y = e->getPosY();
-    rect.w = e->getWidth();
-    rect.h = e->getHeight();
-    
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
-    
-    SDL_RenderFillRect(renderer, &rect);
-    
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderDrawRect(renderer, &rect);
+    glm::vec2 position;
+    position.x = e->getPosX();
+    position.y = e->getPosY();
+
+    glm::vec2 size;
+    size.x = (float)(e->getWidth());
+    size.y = (float)(e->getHeight());
+
+    float rotate = 0.0f;
+    glm::vec3 GLcolor;
+    GLcolor.r = color.r/255.0f;
+    GLcolor.g = color.g/255.0f;
+    GLcolor.b = color.b/255.0f;
+
+    shader->use();
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(position, 0.0f));
+
+    model = glm::translate(model, glm::vec3(0.5f * size.x, 0.5f * size.y, 0.0f));
+    model = glm::rotate(model, glm::radians(rotate), glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::translate(model, glm::vec3(-0.5f * size.x, -0.5f * size.y, 0.0f));
+
+    model = glm::scale(model, glm::vec3(size, 1.0f));
+
+    this->shader->setMat4("model", model);
+    this->shader->setVec3("inColor", GLcolor);
+
+    glBindVertexArray(this->VAO);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 void Game::drawMainScreen() {
@@ -426,15 +484,16 @@ void Game::drawMainScreen() {
     rect.w = width;
     rect.h = height - (height/4);
     
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-    SDL_RenderDrawRect(renderer, &rect);
+    //SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+    //SDL_RenderDrawRect(renderer, &rect);
 
-    drawText("Move here to start!", width*0.18, height*0.8, 64, {255, 255, 255});
+    /*drawText("Move here to start!", width*0.18, height*0.8, 64, {255, 255, 255});
     drawText("Avoid green squares", width*0.30, height*0.1, 40, {255, 255, 255});
     drawText("Blue squares give one-use immunity", width*0.15, height*0.2, 40, {255, 255, 255});
     drawText("Yellow squares give 2x score for 15s", width*0.13, height*0.3, 40, {255, 255, 255});
     drawText("Use mouse to move around", width*0.24, height*0.5, 40, {255, 255, 255});
     drawText("Hold space to gain speed boost", width*0.20, height*0.6, 40, {255, 255, 255});
+    */
 }
 
 void Game::drawAllObjects() {
@@ -455,7 +514,7 @@ void Game::drawPowerUps() {
     }
 }
 
-void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
+/*void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
     TTF_Font* font = TTF_OpenFont("assets/font.ttf", size);
     
     if (font == NULL) {
@@ -465,7 +524,7 @@ void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
     
     SDL_Surface* surfaceMessage = TTF_RenderText_Blended(font, text.c_str(), color);
     
-    textTexture = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
+    //textTexture = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
     
     drawTexture(textTexture, x, y);
     
@@ -473,16 +532,7 @@ void Game::drawText(std::string text, int x, int y, int size, SDL_Color color) {
     surfaceMessage = NULL;
     SDL_DestroyTexture(textTexture);
     TTF_CloseFont(font);
-}
-
-void Game::drawTexture(SDL_Texture* tex, int x, int y) {
-    SDL_Rect tRect;
-    tRect.x = x;
-    tRect.y = y;
-    
-    SDL_QueryTexture(tex, NULL, NULL, &tRect.w, &tRect.h);
-    SDL_RenderCopy(renderer, tex, NULL, &tRect);
-}
+}*/
 
 void Game::setCamera() {
     camera.x = 0;
@@ -525,7 +575,7 @@ void Game::restart() {
         highscore = score;
     }
     ticks = 0;
-    rate = 2.0;
+    rate = 2;
     score = 0;
     speed = 1.0f;
     immune = 0;
@@ -543,14 +593,13 @@ void Game::restart() {
 void Game::clean() {
     logger->info("Cleaning up Game object");
     delete player;
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_DestroyTexture(textTexture);
-    TTF_Quit();
+    //SDL_DestroyRenderer(renderer);
+    SDL_GL_DeleteContext(opengl_context);
+    SDL_DestroyWindow(sdl_window);
     SDL_Quit();
     logger->info("Cleaning finished.");
 }
 
 void Game::logSDLError(const char* msg) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SDLError", msg, window);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SDLError", msg, sdl_window);
 }
